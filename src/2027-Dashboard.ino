@@ -16,6 +16,8 @@
 #include "demos.h"
 
 //Vars need to be global to be accessible to EVE functions
+
+// whoever thought a STRING was a good FSM variable, why.
 String currentDisplay = "Menu";
 uint16_t A = 150, B = 150, counter=0;;
 char MainScreen[] = "Main";
@@ -58,9 +60,9 @@ void setup() {
 
   // Initialize SPI
   SPI.begin();
-  SPI.setMOSI(SPI_MOSI);
-  SPI.setMISO(SPI_MISO);
-  SPI.setSCK(SPI_SCK);
+  // SPI.setMOSI(SPI_MOSI);
+  // SPI.setMISO(SPI_MISO);
+  // SPI.setSCK(SPI_SCK);
 
   //Bump the clock to 8MHz. Appears to be the maximum.
   SPI.beginTransaction(SPISettings(8000000, MSBFIRST, SPI_MODE0));

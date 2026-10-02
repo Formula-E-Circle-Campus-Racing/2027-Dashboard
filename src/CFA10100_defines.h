@@ -113,13 +113,14 @@
 
 //Arduino style pin defines
 // Interrupt from EVE to Arduino - input, not used in this example.
-#define EVE_INT     (5)
+#define EVE_INT     (7)
+// #define EVE_INT     (5) // for teensy (?)
 // PD_N from Arduino to EVE - effectively EVE reset
 #define EVE_PD_NOT  (8)
 // SPI chip select - defined separately since it's manipulated with GPIO calls
-#define EVE_CS_NOT  (10)
+#define EVE_CS_NOT  (9)
 // Reserved for use with the SD card library
-#define SD_CS       (9) //UnAssigend pin# like in uno
+#define SD_CS       (10) //UnAssigend pin# like in uno
 // Debug LED, or used for scope trigger or precise timing
 #define DEBUG_LED   (3)
 
