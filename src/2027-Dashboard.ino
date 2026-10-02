@@ -16,6 +16,44 @@
 #include "demos.h"
 
 //Vars need to be global to be accessible to EVE functions
+uint32_t rpm = 0;
+/*
+  =============  
+    Vars
+  =============
+  Values
+    mph -> speed of car
+    brt -> battery level percentage
+    temp -> temperature of battery, ideally.
+    accel -> % amount of accelerator pedal pressed
+    brake -> % amount of brake pedal pressed
+    low_v -> volage level of low-voltage VCC
+    hi_v -> voltage level of high-voltage battery (exceeds 256)
+
+  Bools
+    rtd -> READY TO DRIVE
+    sd_card_active -> if the SD card is active
+    telem_active -> if we can actually get our radio signal
+
+  =============
+    Warning states
+  =============
+  low_batt -> LOW BATTERY
+  over_travel -> OVER TRAVEL SWITCHED TRIGGERED, for when the brake pedal has been pressed too far
+  hi_temp -> HIGH TEMPERATURE.
+*/
+
+uint8_t mph = 0, brt = 0, temp = 0, brake = 0, accel = 0, low_v = 0;
+bool rtd = 0;
+uint16_t hi_v = 0; // high voltage read
+
+// States. No Strings.
+enum Warnings {
+  low_batt,
+  over_travel,
+  hi_temp
+};
+
 
 // whoever thought a STRING was a good FSM variable, why.
 String currentDisplay = "Menu";
