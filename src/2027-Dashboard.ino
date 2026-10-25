@@ -1,4 +1,10 @@
-//============================================================================
+/**
+ * ============================================================================
+ * 
+ * Dashboard implementation
+ * 
+ * ============================================================================
+ *  */
 #include <Arduino.h>
 #include <SPI.h>
 #include <stdarg.h>
@@ -13,8 +19,9 @@
 #include "EVE_base.h"
 #include "EVE_draw.h"
 
-// Our demonstrations of various EVE functions
-#include "demos.h"
+// Teensy CANbus library
+#include <FlexCAN_T4.h>
+FlexCAN_T4<CAN0, RX_SIZE_256, TX_SIZE_16> Can0;
 
 //Vars need to be global to be accessible to EVE functions
 uint32_t rpm = 0;
@@ -44,8 +51,9 @@ uint32_t rpm = 0;
   hi_temp -> HIGH TEMPERATURE.
 */
 
+// TODO: Refactor to a struct
 uint8_t spd = 60, brt = 0, tmp = 0, brake = 0, accel = 0, low_v = 0;
-bool rtd = 0;
+bool rtd = 0, sd_card_active = 0, telem_active = 0;
 uint16_t hi_v = 0; // high voltage read
 
 const uint8_t SERIAL_COMMAND_BUFFER_SIZE = 96;
@@ -263,7 +271,7 @@ uint16_t drawDashboard(uint16_t FWo) {
   const uint16_t cardTop = 176;
   const uint16_t cardHeight = 160;
   const uint16_t cardValueTop = 246;
-  const uint16_t lowerCardTop = 386;
+  const uint16_t lowerCardTop = 366;
   const uint16_t largeLabelFont = 31;
   const uint32_t rpmValue = ((uint32_t)spd * 314UL) / 100UL;
 
@@ -272,9 +280,23 @@ uint16_t drawDashboard(uint16_t FWo) {
 
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 0, 0, 800, 50);
-  FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 51, 51));
+
+  if(telem_active){
+    FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 51, 51));
+  }
+  else{
+    FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(225, 136, 136));
+  }
   FWo = EVE_Text(FWo, 18, 15, 25, 0, "RADIO");
-  FWo = EVE_Text(FWo, 700, 15, 25, 0, "SD CARD");
+
+  // when enabled, set to red.
+  if(sd_card_active){
+    FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 51, 51));
+  }
+  else{
+    FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(225, 136, 136));
+  }
+  FWo = EVE_Text(FWo, 640, 15, 25, 0, "SD CARD");
 
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
   FWo = EVE_PrintF(FWo, 24, 58, 25, 0, "%lu rpm", rpmValue);
@@ -286,51 +308,73 @@ uint16_t drawDashboard(uint16_t FWo) {
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 40, cardTop, 130, cardTop + cardHeight);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(51, 51, 255));
-  FWo = EVE_Filled_Rectangle(FWo, 40, cardValueTop, 130, cardTop + cardHeight);
+  FWo = EVE_Filled_Rectangle(FWo, 40, cardTop + (uint16_t)map(brt, 0, 100, cardHeight, 0), 130, cardTop + cardHeight);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
-  FWo = EVE_Text(FWo, 55, 211, 16, 0, "CURRENT");
+  FWo = EVE_Text(FWo, 55, 211, 20, 0, "CUR (A)");
   FWo = EVE_PrintF(FWo, 60, 266, 25, 0, "%u%%", brt);
 
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 140, cardTop, 230, cardTop + cardHeight);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(51, 51, 255));
-  FWo = EVE_Filled_Rectangle(FWo, 140, cardValueTop, 230, cardTop + cardHeight);
+  FWo = EVE_Filled_Rectangle(FWo, 140, cardTop + (uint16_t)map(brt, 0, 100, cardHeight, 0), 230, cardTop + cardHeight);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
-  FWo = EVE_Text(FWo, 157, 211, 16, 0, "BATTERY");
+  FWo = EVE_Text(FWo, 157, 211, 20, 0, "BAT %");
   FWo = EVE_PrintF(FWo, 167, 266, 25, 0, "%u", brt);
 
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 102));
   FWo = EVE_PrintF(FWo, 400, 178, 31, EVE_OPT_CENTER, "%u", spd);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
-  FWo = EVE_Text(FWo, 400, 382, 31, EVE_OPT_CENTER, "mph");
-  FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(51, 255, 51));
-  FWo = EVE_Text(FWo, 400, 430, 25, EVE_OPT_CENTER, (rtd ? "READY" : "NOT READY"));
+  FWo = EVE_Text(FWo, 400, 382, 23, EVE_OPT_CENTER, "mph");
+  if(rtd){
+    FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(51, 255, 51));
+    FWo = EVE_Text(FWo, 400, 430, 25, EVE_OPT_CENTER, "READY");
+  }
+  else{
+    FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 51, 51));
+    FWo = EVE_Text(FWo, 400, 430, 25, EVE_OPT_CENTER, "NOT READY");
+  }
+  
 
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 570, cardTop, 660, cardTop + cardHeight);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 51, 51));
-  FWo = EVE_Filled_Rectangle(FWo, 570, cardValueTop, 660, cardTop + cardHeight);
+  FWo = EVE_Filled_Rectangle(FWo, 570, cardTop + (uint16_t)map(brake, 0, 100, cardHeight, 0), 660, cardTop + cardHeight);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
-  FWo = EVE_Text(FWo, 595, 211, 16, 0, "BRAKE");
+  FWo = EVE_Text(FWo, 595, 211, 20, 0, "BRAKE");
   FWo = EVE_PrintF(FWo, 605, 266, 25, 0, "%u", brake);
+
 
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 670, cardTop, 760, cardTop + cardHeight);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(51, 255, 51));
-  FWo = EVE_Filled_Rectangle(FWo, 670, cardValueTop, 760, cardTop + cardHeight);
+  FWo = EVE_Filled_Rectangle(FWo, 670, cardTop + (uint16_t)map(accel, 0, 100, cardHeight, 0), 760, cardTop + cardHeight);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
-  FWo = EVE_Text(FWo, 692, 211, 16, 0, "ACCEL");
+  FWo = EVE_Text(FWo, 692, 211, 20, 0, "ACCEL");
   FWo = EVE_PrintF(FWo, 705, 266, 25, 0, "%u", accel);
 
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 40, lowerCardTop, 157, 436);
-  FWo = EVE_PrintF(FWo, 50, 400, 25, 0, "BT: %u", tmp);
+
+  FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
+  FWo = EVE_PrintF(FWo, 50, 380, 25, 0, "BT: %u", tmp);
+
+  FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 169, lowerCardTop, 286, 436);
-  FWo = EVE_PrintF(FWo, 179, 400, 25, 0, "HV:%uV", hi_v);
+  
+  FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
+  FWo = EVE_PrintF(FWo, 179, 380, 25, 0, "HV:%uV", hi_v);
+  
+  FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 518, lowerCardTop, 635, 436);
-  FWo = EVE_PrintF(FWo, 528, 400, 25, 0, "LV: %uV", low_v);
+
+  FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
+  FWo = EVE_PrintF(FWo, 528, 380, 25, 0, "LV: %uV", low_v);
+  
+  FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 647, lowerCardTop, 764, 436);
-  FWo = EVE_Text(FWo, 657, 400, 25, 0, "00:00.00");
+
+  FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
+  FWo = EVE_Text(FWo, 657, 380, 18, 0, "00:00.00");
 
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 51, 51));
   FWo = EVE_Filled_Rectangle(FWo, 0, 454, 800, 480);
@@ -394,12 +438,29 @@ void setup() {
   //See if we can find the FTDI/BridgeTek EVE processor
   if(0 != EVE_Initialize()) {
     DBG_STAT("Failed to initialize %s8%02X. Stopping.\n",EVE_DEVICE<0x14?"FT":"BT",EVE_DEVICE);
+    Serial.println("pain");
     while(1);
   }
   else {
     DBG_STAT("%s8%02X initialized.\n",EVE_DEVICE<0x14?"FT":"BT",EVE_DEVICE);
   }
+
+  // enable canbus
+  Can0.begin();
+  Can0.setBaudRate(250000); // for ::BR_250k
+  Can0.setMaxMB(16);
+  Can0.enableFIFO();
+  Can0.enableFIFOInterrupt();
+  Can0.onReceive(canSniff);
+  // Can0.enhanceFilter // TODO: add filter for priority 0x01
+}
+
+void canSniff(const CAN_message_t &msg) {
+  DBG_GEEK("Sniffed");
+  if (msg.id == 0x01 && msg.len >= 2) {
+    accel = constrain(msg.buf[1], 0, 100);
   }
+}
 
 //===========================================================================
 
@@ -436,19 +497,20 @@ void loop() {
 
   //Initialize bounce circle
   DBG_STAT("Initialize_Bounce_Demo() . . .");
-  Initialize_Bounce_Demo();
+  // Initialize_Bounce_Demo();
   DBG_STAT(" done.\n");
 
   //Initialize logo 
   DBG_STAT("Initialize_Logo_Demo() . . .");
-  FWo=Initialize_Logo_Demo(FWo,&RAM_G_Unused_Start,next_bitmap_handle_available);
+  // FWo=Initialize_Logo_Demo(FWo,&RAM_G_Unused_Start,next_bitmap_handle_available);
   //Keep track that we used a bitmap handle
-  next_bitmap_handle_available--;
+  // next_bitmap_handle_available--;
   DBG_STAT("  done.\n");
   DBG_GEEK("RAM_G after logo: 0x%08lX = %lu\n",RAM_G_Unused_Start,RAM_G_Unused_Start);
   
   
   while(1) {
+    Can0.events();
     processSerialInput();
     FWo = Wait_for_EVE_Execution_Complete(FWo);
     FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_CMD_DLSTART);
