@@ -7,7 +7,7 @@ So far, the code has been copied over from previous development of the dashboard
 The active display is a single telemetry dashboard based on
 `dash-template.drawio.html`. It uses the 800 x 480 EVE display area with a
 status header, speed bar, speed readout, battery/current, brake and accelerator
-cards, battery/high-voltage/low-voltage status cards, ready-to-drive status,
+sliders, battery/high-voltage/low-voltage status cards, ready-to-drive status,
 and warning banner. The legacy touch-screen demo states are no longer rendered.
 
 ## Serial debug commands
@@ -30,3 +30,11 @@ in this order:
 `RD` prints the requested variables as `name=value`. `DMP` prints all
 supported variables. Values outside their variable's storage range, unknown
 variables, and malformed commands return an `ERR` response.
+
+## CAN accelerator input
+
+The dashboard initializes CAN0 at 250,000 baud and accepts standard CAN 2.0 data
+frames from node address `0x01` (priority `0`). The first byte of a matching
+frame is interpreted as the accelerator pedal position and clamped to
+`0`-`100`. The value is read in the FlexCAN receive callback and shown by the
+ACCEL indicator.
