@@ -11,7 +11,7 @@
 #include <string.h>
 #include <stdlib.h>
 //Definitions for our circuit board and display.
-#include "CFA10100_defines.h"
+#include "dashboard_defines.h"
 
 #include <SD.h>
 
@@ -52,9 +52,13 @@ uint32_t rpm = 0;
 */
 
 // TODO: Refactor to a struct
-uint8_t spd = 60, brt = 0, tmp = 0, brake = 0, accel = 0, low_v = 0;
-bool rtd = 0, sd_card_active = 0, telem_active = 0;
-uint16_t hi_v = 0; // high voltage read
+struct InternalVariables{
+  uint8_t spd = 60, brt = 0, tmp = 0, brake = 0, accel = 0, low_v = 0;
+  bool rtd = 0, sd_card_active = 0, telem_active = 0;
+  uint16_t hi_v = 0; // high voltage read
+} systemVs;
+
+u_int32_t stopwatch = 0;
 
 const uint8_t SERIAL_COMMAND_BUFFER_SIZE = 96;
 char serialCommandBuffer[SERIAL_COMMAND_BUFFER_SIZE];
@@ -63,6 +67,7 @@ bool serialCommandOverflow = false;
 
 // States. No Strings.
 enum Warnings {
+  none,
   low_batt,
   over_travel,
   hi_temp
@@ -73,28 +78,28 @@ void printVariable(const char *name) {
   Serial.print('=');
 
   if (strcmp(name, "spd") == 0) {
-    Serial.println(spd);
+    Serial.println(systemVs.spd);
   }
   else if (strcmp(name, "brt") == 0) {
-    Serial.println(brt);
+    Serial.println(systemVs.brt);
   }
   else if (strcmp(name, "tmp") == 0) {
-    Serial.println(tmp);
+    Serial.println(systemVs.tmp);
   }
   else if (strcmp(name, "brake") == 0) {
-    Serial.println(brake);
+    Serial.println(systemVs.brake);
   }
   else if (strcmp(name, "accel") == 0) {
-    Serial.println(accel);
+    Serial.println(systemVs.accel);
   }
   else if (strcmp(name, "low_v") == 0) {
-    Serial.println(low_v);
+    Serial.println(systemVs.low_v);
   }
   else if (strcmp(name, "rtd") == 0) {
-    Serial.println(rtd ? 1 : 0);
+    Serial.println(systemVs.rtd ? 1 : 0);
   }
   else if (strcmp(name, "hi_v") == 0) {
-    Serial.println(hi_v);
+    Serial.println(systemVs.hi_v);
   }
   else {
     Serial.println("ERR unknown variable");
@@ -117,28 +122,28 @@ bool setVariable(const char *name, const char *text) {
   long value;
 
   if (strcmp(name, "spd") == 0 && parseValue(text, 0, 255, &value)) {
-    spd = (uint8_t)value;
+    systemVs.spd = (uint8_t)value;
   }
   else if (strcmp(name, "brt") == 0 && parseValue(text, 0, 255, &value)) {
-    brt = (uint8_t)value;
+    systemVs.brt = (uint8_t)value;
   }
   else if (strcmp(name, "tmp") == 0 && parseValue(text, 0, 255, &value)) {
-    tmp = (uint8_t)value;
+    systemVs.tmp = (uint8_t)value;
   }
   else if (strcmp(name, "brake") == 0 && parseValue(text, 0, 255, &value)) {
-    brake = (uint8_t)value;
+    systemVs.brake = (uint8_t)value;
   }
   else if (strcmp(name, "accel") == 0 && parseValue(text, 0, 255, &value)) {
-    accel = (uint8_t)value;
+    systemVs.accel = (uint8_t)value;
   }
   else if (strcmp(name, "low_v") == 0 && parseValue(text, 0, 255, &value)) {
-    low_v = (uint8_t)value;
+    systemVs.low_v = (uint8_t)value;
   }
   else if (strcmp(name, "rtd") == 0 && parseValue(text, 0, 1, &value)) {
-    rtd = value != 0;
+    systemVs.rtd = value != 0;
   }
   else if (strcmp(name, "hi_v") == 0 && parseValue(text, 0, 65535, &value)) {
-    hi_v = (uint16_t)value;
+    systemVs.hi_v = (uint16_t)value;
   }
   else {
     return false;
@@ -273,7 +278,7 @@ uint16_t drawDashboard(uint16_t FWo) {
   const uint16_t cardValueTop = 246;
   const uint16_t lowerCardTop = 366;
   const uint16_t largeLabelFont = 31;
-  const uint32_t rpmValue = ((uint32_t)spd * 314UL) / 100UL;
+  const uint32_t rpmValue = ((uint32_t)(systemVs.spd) * 314UL) / 100UL;
 
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(0, 0, 0));
   FWo = EVE_Filled_Rectangle(FWo, 0, 0, 800, 480);
@@ -281,7 +286,7 @@ uint16_t drawDashboard(uint16_t FWo) {
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 0, 0, 800, 50);
 
-  if(telem_active){
+  if(systemVs.telem_active){
     FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 51, 51));
   }
   else{
@@ -290,7 +295,7 @@ uint16_t drawDashboard(uint16_t FWo) {
   FWo = EVE_Text(FWo, 18, 15, 25, 0, "RADIO");
 
   // when enabled, set to red.
-  if(sd_card_active){
+  if(systemVs.sd_card_active){
     FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 51, 51));
   }
   else{
@@ -301,31 +306,31 @@ uint16_t drawDashboard(uint16_t FWo) {
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
   FWo = EVE_PrintF(FWo, 24, 58, 25, 0, "%lu rpm", rpmValue);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(102, 255, 102));
-  FWo = EVE_Filled_Rectangle(FWo, 16, 101, 16 + (uint16_t)map(spd, 0, 255, 0, 768), 151);
+  FWo = EVE_Filled_Rectangle(FWo, 16, 101, 16 + (uint16_t)map(systemVs.spd, 0, 255, 0, 768), 151);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
-  FWo = EVE_Filled_Rectangle(FWo, 16 + (uint16_t)map(spd, 0, 255, 0, 768), 101, 784, 151);
+  FWo = EVE_Filled_Rectangle(FWo, 16 + (uint16_t)map(systemVs.spd, 0, 255, 0, 768), 101, 784, 151);
 
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 40, cardTop, 130, cardTop + cardHeight);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(51, 51, 255));
-  FWo = EVE_Filled_Rectangle(FWo, 40, cardTop + (uint16_t)map(brt, 0, 100, cardHeight, 0), 130, cardTop + cardHeight);
+  FWo = EVE_Filled_Rectangle(FWo, 40, cardTop + (uint16_t)map(systemVs.brt, 0, 100, cardHeight, 0), 130, cardTop + cardHeight);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
   FWo = EVE_Text(FWo, 55, 211, 20, 0, "CUR (A)");
-  FWo = EVE_PrintF(FWo, 60, 266, 25, 0, "%u%%", brt);
+  FWo = EVE_PrintF(FWo, 60, 266, 25, 0, "%u%%", systemVs.brt);
 
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 140, cardTop, 230, cardTop + cardHeight);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(51, 51, 255));
-  FWo = EVE_Filled_Rectangle(FWo, 140, cardTop + (uint16_t)map(brt, 0, 100, cardHeight, 0), 230, cardTop + cardHeight);
+  FWo = EVE_Filled_Rectangle(FWo, 140, cardTop + (uint16_t)map(systemVs.brt, 0, 100, cardHeight, 0), 230, cardTop + cardHeight);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
   FWo = EVE_Text(FWo, 157, 211, 20, 0, "BAT %");
-  FWo = EVE_PrintF(FWo, 167, 266, 25, 0, "%u", brt);
+  FWo = EVE_PrintF(FWo, 167, 266, 25, 0, "%u", systemVs.brt);
 
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 102));
-  FWo = EVE_PrintF(FWo, 400, 178, 31, EVE_OPT_CENTER, "%u", spd);
+  FWo = EVE_PrintF(FWo, 400, 178, 31, EVE_OPT_CENTER, "%u", systemVs.spd);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
   FWo = EVE_Text(FWo, 400, 382, 23, EVE_OPT_CENTER, "mph");
-  if(rtd){
+  if(systemVs.rtd){
     FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(51, 255, 51));
     FWo = EVE_Text(FWo, 400, 430, 25, EVE_OPT_CENTER, "READY");
   }
@@ -338,41 +343,42 @@ uint16_t drawDashboard(uint16_t FWo) {
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 570, cardTop, 660, cardTop + cardHeight);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 51, 51));
-  FWo = EVE_Filled_Rectangle(FWo, 570, cardTop + (uint16_t)map(brake, 0, 100, cardHeight, 0), 660, cardTop + cardHeight);
+  FWo = EVE_Filled_Rectangle(FWo, 570, cardTop + (uint16_t)map(systemVs.brake, 0, 100, cardHeight, 0), 660, cardTop + cardHeight);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
   FWo = EVE_Text(FWo, 595, 211, 20, 0, "BRAKE");
-  FWo = EVE_PrintF(FWo, 605, 266, 25, 0, "%u", brake);
+  FWo = EVE_PrintF(FWo, 605, 266, 25, 0, "%u", systemVs.brake);
 
 
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 670, cardTop, 760, cardTop + cardHeight);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(51, 255, 51));
-  FWo = EVE_Filled_Rectangle(FWo, 670, cardTop + (uint16_t)map(accel, 0, 100, cardHeight, 0), 760, cardTop + cardHeight);
+  FWo = EVE_Filled_Rectangle(FWo, 670, cardTop + (uint16_t)map(systemVs.accel, 0, 100, cardHeight, 0), 760, cardTop + cardHeight);
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
   FWo = EVE_Text(FWo, 692, 211, 20, 0, "ACCEL");
-  FWo = EVE_PrintF(FWo, 705, 266, 25, 0, "%u", accel);
+  FWo = EVE_PrintF(FWo, 705, 266, 25, 0, "%u", systemVs.accel);
 
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 40, lowerCardTop, 157, 436);
 
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
-  FWo = EVE_PrintF(FWo, 50, 380, 25, 0, "BT: %u", tmp);
+  FWo = EVE_PrintF(FWo, 50, 380, 25, 0, "BT: %u", systemVs.tmp);
 
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 169, lowerCardTop, 286, 436);
   
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
-  FWo = EVE_PrintF(FWo, 179, 380, 25, 0, "HV:%uV", hi_v);
+  FWo = EVE_PrintF(FWo, 179, 380, 25, 0, "HV:%uV", systemVs.hi_v);
   
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 518, lowerCardTop, 635, 436);
 
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
-  FWo = EVE_PrintF(FWo, 528, 380, 25, 0, "LV: %uV", low_v);
+  FWo = EVE_PrintF(FWo, 528, 380, 25, 0, "LV: %uV", systemVs.low_v);
   
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(77, 77, 77));
   FWo = EVE_Filled_Rectangle(FWo, 647, lowerCardTop, 764, 436);
 
+  // todo: add timer
   FWo = EVE_Cmd_Dat_0(FWo, EVE_ENC_COLOR_RGB(255, 255, 255));
   FWo = EVE_Text(FWo, 657, 380, 18, 0, "00:00.00");
 
@@ -458,7 +464,7 @@ void setup() {
 void canSniff(const CAN_message_t &msg) {
   DBG_GEEK("Sniffed");
   if (msg.id == 0x01 && msg.len >= 2) {
-    accel = constrain(msg.buf[1], 0, 100);
+    systemVs.accel = constrain(msg.buf[1], 0, 100);
   }
 }
 
